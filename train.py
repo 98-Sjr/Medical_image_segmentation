@@ -33,13 +33,6 @@ LOSS_NAMES.append('BCEWithLogitsLoss')
 
 
 
-"""
-
-指定参数：
---dataset dsb2018_96 
---arch NestedUNet
-
-"""
 
 def parse_args():
     parser = argparse.ArgumentParser()
