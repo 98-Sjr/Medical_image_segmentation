@@ -19,7 +19,7 @@ from dataset import Dataset
 from metrics import iou_score
 from utils import AverageMeter
 """
-需要指定参数：--name dsb2018_96_NestedUNet_woDS
+需要指定参数：--name 
 """
 
 def parse_args():
