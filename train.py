@@ -31,8 +31,6 @@ ARCH_NAMES = archs.__all__
 LOSS_NAMES = losses.__all__
 LOSS_NAMES.append('BCEWithLogitsLoss')
 
-
-
 """
 
 指定参数：
@@ -41,22 +39,24 @@ LOSS_NAMES.append('BCEWithLogitsLoss')
 
 """
 
+
 def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--name', default=None,
                         help='model name: (default: arch+timestamp)')
-    parser.add_argument('--epochs', default=100, type=int, metavar='N',
+    parser.add_argument('--epochs', default=500, type=int, metavar='N',
                         help='number of total epochs to run')
-    parser.add_argument('-b', '--batch_size', default=5, type=int,
+    parser.add_argument('-b', '--batch_size', default=2, type=int,
                         metavar='N', help='mini-batch size (default: 16)')
-    
+
     # model
-    parser.add_argument('--arch', '-a', metavar='ARCH', default='DoubleUnet', # U_Net NestedUNet R2U_Net AttU_Net R2AttU_Net
-                        choices=ARCH_NAMES,
+    parser.add_argument('--arch', '-a', metavar='ARCH', default='Swinunet',
+                        choices=['U_Net', 'NestedUNet', 'R2U_Net', 'AttU_Net', 'R2AttU_Net', 'DeepLabV3Plus',
+                                 'FCN8s', 'FCN16s', 'FCN32s', 'SegNet', 'DoubleUnet', 'SwinUnet'],
                         help='model architecture: ' +
-                        ' | '.join(ARCH_NAMES) +
-                        ' (default: NestedUNet)')
+                             ' | '.join(ARCH_NAMES) +
+                             ' (default: NestedUNet)')
     parser.add_argument('--init_type', '-i', metavar='init', default='kaiming',
                         choices=['normal', 'xavier', 'kaiming', 'orthogonal'])
     parser.add_argument('--deep_supervision', default=False, type=str2bool)
@@ -66,20 +66,20 @@ def parse_args():
                         help='output channels')
     parser.add_argument('--num_classes', default=1, type=int,
                         help='number of classes')
-    parser.add_argument('--input_w', default=256, type=int,
+    parser.add_argument('--input_w', default=224, type=int,
                         help='image width')
-    parser.add_argument('--input_h', default=256, type=int,
+    parser.add_argument('--input_h', default=224, type=int,
                         help='image height')
-    
+
     # loss
     parser.add_argument('--loss', default='BCEDiceLoss',
                         choices=LOSS_NAMES,
                         help='loss: ' +
-                        ' | '.join(LOSS_NAMES) +
-                        ' (default: BCEDiceLoss)')
-    
+                             ' | '.join(LOSS_NAMES) +
+                             ' (default: BCEDiceLoss)')
+
     # dataset
-    parser.add_argument('--dataset', default='vessel_256',
+    parser.add_argument('--dataset', default='vessel_224',
                         help='dataset name')
     parser.add_argument('--img_ext', default='.png',
                         help='image file extension')
@@ -87,12 +87,12 @@ def parse_args():
                         help='mask file extension')
 
     # optimizer
-    parser.add_argument('--optimizer', default='Adam',
+    parser.add_argument('--optimizer', default='SGD',
                         choices=['Adam', 'SGD'],
                         help='loss: ' +
-                        ' | '.join(['Adam', 'SGD']) +
-                        ' (default: Adam)')
-    parser.add_argument('--lr', '--learning_rate', default=1e-3, type=float,
+                             ' | '.join(['Adam', 'SGD']) +
+                             ' (default: Adam)')
+    parser.add_argument('--lr', '--learning_rate', default=1e-2, type=float,
                         metavar='LR', help='initial learning rate')
     parser.add_argument('--momentum', default=0.9, type=float,
                         help='momentum')
@@ -104,12 +104,12 @@ def parse_args():
     # scheduler
     parser.add_argument('--scheduler', default='CosineAnnealingLR',
                         choices=['CosineAnnealingLR', 'ReduceLROnPlateau', 'MultiStepLR', 'ConstantLR'])
-    parser.add_argument('--min_lr', default=1e-5, type=float,
+    parser.add_argument('--min_lr', default=1e-8, type=float,
                         help='minimum learning rate')
     parser.add_argument('--factor', default=0.1, type=float)
     parser.add_argument('--patience', default=2, type=int)
     parser.add_argument('--milestones', default='1,2', type=str)
-    parser.add_argument('--gamma', default=2/3, type=float)
+    parser.add_argument('--gamma', default=2 / 3, type=float)
     parser.add_argument('--early_stopping', default=-1, type=int,
                         metavar='N', help='early stopping (default: -1)')
 
@@ -145,7 +145,6 @@ def train(config, train_loader, model, criterion, optimizer):
             loss = criterion(output, target)
             iou = iou_score(output, target)
 
-
         # compute gradient and do optimizing step
         optimizer.zero_grad()
         loss.backward()
@@ -158,8 +157,8 @@ def train(config, train_loader, model, criterion, optimizer):
             ('loss', avg_meters['loss'].avg),
             ('iou', avg_meters['iou'].avg),
         ])
-        pbar.set_postfix(postfix)    # 实时显示进度条
-        pbar.update(1)               # 更新进度条
+        pbar.set_postfix(postfix)  # 实时显示进度条
+        pbar.update(1)  # 更新进度条
     pbar.close()
 
     return OrderedDict([('loss', avg_meters['loss'].avg),
@@ -207,6 +206,7 @@ def validate(config, val_loader, model, criterion):
     return OrderedDict([('loss', avg_meters['loss'].avg),
                         ('iou', avg_meters['iou'].avg)])
 
+
 def up_iou(iou, config):
     with open(os.path.join('./models/%s_%s_woDS' % (config['dataset'], config['arch']), 'config.yml')) as f:
         doc = yaml.load(f)
@@ -238,16 +238,14 @@ def main():
         # config['best_iou'] = iou
         yaml.dump(config, f)
 
-
     print('-' * 50)
     for key in config:
         print('%s: %s' % (key, config[key]))
     print('-' * 50)
 
-
     # define loss function (criterion)
     if config['loss'] == 'BCEWithLogitsLoss':
-        criterion = nn.BCEWithLogitsLoss().cuda() # WithLogits 就是先将输出结果经过sigmoid再交叉熵
+        criterion = nn.BCEWithLogitsLoss().cuda()  # WithLogits 就是先将输出结果经过sigmoid再交叉熵
     else:
         criterion = losses.__dict__[config['loss']]().cuda()
 
@@ -258,12 +256,13 @@ def main():
     if config['arch'] == 'U_Net':
         model = archs.__dict__[config['arch']](config['input_channels'], config['output_channels'])
     elif config['arch'] == 'NestedUNet':
-        model = archs.__dict__[config['arch']](config['output_channels'], config['input_channels'], config['deep_supervision'])
-    elif config['arch'] == 'R2U_Net' :
+        model = archs.__dict__[config['arch']](config['output_channels'], config['input_channels'],
+                                               config['deep_supervision'])
+    elif config['arch'] == 'R2U_Net':
         model = archs.__dict__[config['arch']](config['input_channels'], config['output_channels'], t=2)
-    elif config['arch'] == 'AttU_Net' :
+    elif config['arch'] == 'AttU_Net':
         model = archs.__dict__[config['arch']](config['input_channels'], config['output_channels'])
-    elif config['arch'] == 'R2AttU_Net' :
+    elif config['arch'] == 'R2AttU_Net':
         model = archs.__dict__[config['arch']](config['input_channels'], config['output_channels'], t=2)
     elif config['arch'] == 'FCN8s':
         model = archs.__dict__[config['arch']](config['input_channels'])
@@ -271,9 +270,11 @@ def main():
         model = archs.__dict__[config['arch']](config['input_channels'], config['output_channels'])
     elif config['arch'] == 'DeepLabV3Plus':
         model = archs.__dict__[config['arch']](n_classes=3, n_blocks=[3, 4, 23, 3],
-                                               atrous_rates=[6, 12, 18], multi_grids=[1, 2, 4], output_stride=16,)
+                                               atrous_rates=[6, 12, 18], multi_grids=[1, 2, 4], output_stride=16, )
     elif config['arch'] == 'DoubleUnet':
         model = archs.__dict__[config['arch']](models.vgg19_bn(), config['input_channels'], config['output_channels'])
+    elif config['arch'] == 'SwinUnet':
+        model = archs.__dict__[config['arch']]
     else:
         raise NotImplementedError
 
@@ -283,7 +284,7 @@ def main():
     if os.path.exists(os.path.join('./models/%s_%s_woDS' % (config['dataset'], config['arch']), 'model.pth')):
         model.load_state_dict(torch.load(os.path.join('./models/%s_%s_woDS'
                                                       % (config['dataset'], config['arch']), 'model.pth')))
-        print('-'*20+'Load model success'+'-'*20)
+        print('-' * 20 + 'Load model success' + '-' * 20)
 
     if config['optimizer'] == 'Adam':
         optimizer = optim.Adam(params, lr=config['lr'], weight_decay=config['weight_decay'])
@@ -300,7 +301,8 @@ def main():
         scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, factor=config['factor'], patience=config['patience'],
                                                    verbose=1, min_lr=config['min_lr'])
     elif config['scheduler'] == 'MultiStepLR':
-        scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[int(e) for e in config['milestones'].split(',')], gamma=config['gamma'])
+        scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[int(e) for e in config['milestones'].split(',')],
+                                             gamma=config['gamma'])
     elif config['scheduler'] == 'ConstantLR':
         scheduler = None
     else:
@@ -311,7 +313,7 @@ def main():
     img_ids = [os.path.splitext(os.path.basename(p))[0] for p in img_ids]
 
     train_img_ids, val_img_ids = train_test_split(img_ids, test_size=0.2, random_state=41)
-    #数据增强：
+    # 数据增强：
     train_transform = Compose([
         albumentations.RandomRotate90(),
         transforms.Flip(),
@@ -319,7 +321,7 @@ def main():
             transforms.HueSaturationValue(),
             transforms.RandomBrightness(),
             transforms.RandomContrast(),
-        ], p=1),#按照归一化的概率选择执行哪一个
+        ], p=1),  # 按照归一化的概率选择执行哪一个
         albumentations.Resize(config['input_h'], config['input_w']),
         transforms.Normalize(),
     ])
@@ -351,7 +353,7 @@ def main():
         batch_size=config['batch_size'],
         shuffle=True,
         num_workers=config['num_workers'],
-        drop_last=True)#不能整除的batch是否就不要了
+        drop_last=True)  # 不能整除的batch是否就不要了
     val_loader = torch.utils.data.DataLoader(
         val_dataset,
         batch_size=config['batch_size'],
